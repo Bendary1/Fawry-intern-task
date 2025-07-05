@@ -19,12 +19,10 @@ abstract class Product {
     public void setQuantity(int quantity) { this.quantity = quantity; }
     
     public abstract boolean isExpired();
-    public boolean isInStock(int requestedQuantity) {
-        return quantity >= requestedQuantity;
-    }
+    public abstract boolean isAvailable(int requestedQuantity);
 }
 
-// Expirable products
+// Expirable Product class
 class ExpirableProduct extends Product {
     private LocalDate expirationDate;
     
@@ -37,9 +35,16 @@ class ExpirableProduct extends Product {
     public boolean isExpired() {
         return LocalDate.now().isAfter(expirationDate);
     }
+    
+    @Override
+    public boolean isAvailable(int requestedQuantity) {
+        return !isExpired() && quantity >= requestedQuantity;
+    }
+    
+    public LocalDate getExpirationDate() { return expirationDate; }
 }
 
-// Non-expirable products
+// Non-Expirable Product class
 class NonExpirableProduct extends Product {
     public NonExpirableProduct(String name, double price, int quantity) {
         super(name, price, quantity);
@@ -49,15 +54,20 @@ class NonExpirableProduct extends Product {
     public boolean isExpired() {
         return false;
     }
+    
+    @Override
+    public boolean isAvailable(int requestedQuantity) {
+        return quantity >= requestedQuantity;
+    }
 }
 
-// Interface for shippable items
+// Shippable interface
 interface Shippable {
     String getName();
     double getWeight();
 }
 
-// Shippable expirable product
+// Shippable Expirable Product
 class ShippableExpirableProduct extends ExpirableProduct implements Shippable {
     private double weight;
     
@@ -70,7 +80,7 @@ class ShippableExpirableProduct extends ExpirableProduct implements Shippable {
     public double getWeight() { return weight; }
 }
 
-// Shippable non-expirable product
+// Shippable Non-Expirable Product
 class ShippableNonExpirableProduct extends NonExpirableProduct implements Shippable {
     private double weight;
     
@@ -81,61 +91,6 @@ class ShippableNonExpirableProduct extends NonExpirableProduct implements Shippa
     
     @Override
     public double getWeight() { return weight; }
-}
-
-// Cart item to track quantity
-class CartItem {
-    private Product product;
-    private int quantity;
-    
-    public CartItem(Product product, int quantity) {
-        this.product = product;
-        this.quantity = quantity;
-    }
-    
-    public Product getProduct() { return product; }
-    public int getQuantity() { return quantity; }
-    public double getTotalPrice() { return product.getPrice() * quantity; }
-}
-
-// Shopping cart
-class Cart {
-    private List<CartItem> items = new ArrayList<>();
-    
-    public void add(Product product, int quantity) throws Exception {
-        if (product.isExpired()) {
-            throw new Exception("Cannot add expired product: " + product.getName());
-        }
-        if (!product.isInStock(quantity)) {
-            throw new Exception("Insufficient stock for product: " + product.getName() + 
-                              " (Available: " + product.getQuantity() + ", Requested: " + quantity + ")");
-        }
-        
-        // Check if product already exists in cart
-        for (CartItem item : items) {
-            if (item.getProduct().equals(product)) {
-                int newQuantity = item.getQuantity() + quantity;
-                if (!product.isInStock(newQuantity)) {
-                    throw new Exception("Insufficient stock for product: " + product.getName() + 
-                                      " (Available: " + product.getQuantity() + ", Total requested: " + newQuantity + ")");
-                }
-                items.remove(item);
-                items.add(new CartItem(product, newQuantity));
-                return;
-            }
-        }
-        
-        items.add(new CartItem(product, quantity));
-    }
-    
-    public List<CartItem> getItems() { return new ArrayList<>(items); }
-    public boolean isEmpty() { return items.isEmpty(); }
-    
-    public double getSubtotal() {
-        return items.stream().mapToDouble(CartItem::getTotalPrice).sum();
-    }
-    
-    public void clear() { items.clear(); }
 }
 
 // Customer class
@@ -150,184 +105,224 @@ class Customer {
     
     public String getName() { return name; }
     public double getBalance() { return balance; }
+    public void setBalance(double balance) { this.balance = balance; }
     
-    public void deductBalance(double amount) throws Exception {
-        if (balance < amount) {
-            throw new Exception("Insufficient balance. Required: " + amount + ", Available: " + balance);
+    public boolean canAfford(double amount) {
+        return balance >= amount;
+    }
+    
+    public void deductBalance(double amount) {
+        if (canAfford(amount)) {
+            balance -= amount;
         }
-        balance -= amount;
     }
 }
 
-// Shipping service
-class ShippingService {
-    private static final double SHIPPING_RATE_PER_KG = 10.0; // $10 per kg
-    private static final double BASE_SHIPPING_FEE = 5.0;     // $5 base fee
+// Cart Item class
+class CartItem {
+    private Product product;
+    private int quantity;
     
-    public double calculateShippingFee(List<Shippable> items) {
-        if (items.isEmpty()) return 0;
-        
-        double totalWeight = items.stream().mapToDouble(Shippable::getWeight).sum();
-        return BASE_SHIPPING_FEE + (totalWeight * SHIPPING_RATE_PER_KG);
+    public CartItem(Product product, int quantity) {
+        this.product = product;
+        this.quantity = quantity;
     }
     
-    public void processShipment(List<Shippable> items, Map<String, Integer> quantities) {
-        if (items.isEmpty()) return;
+    public Product getProduct() { return product; }
+    public int getQuantity() { return quantity; }
+    public double getTotalPrice() { return product.getPrice() * quantity; }
+}
+
+// Cart class
+class Cart {
+    private List<CartItem> items;
+    
+    public Cart() {
+        this.items = new ArrayList<>();
+    }
+    
+    public void add(Product product, int quantity) throws Exception {
+        if (!product.isAvailable(quantity)) {
+            if (product.isExpired()) {
+                throw new Exception("Product " + product.getName() + " has expired");
+            } else {
+                throw new Exception("Product " + product.getName() + " is out of stock. Available: " + product.getQuantity());
+            }
+        }
+        
+        items.add(new CartItem(product, quantity));
+        product.setQuantity(product.getQuantity() - quantity);
+    }
+    
+    public List<CartItem> getItems() { return items; }
+    
+    public boolean isEmpty() { return items.isEmpty(); }
+    
+    public double getSubtotal() {
+        return items.stream().mapToDouble(CartItem::getTotalPrice).sum();
+    }
+    
+    public List<Shippable> getShippableItems() {
+        List<Shippable> shippableItems = new ArrayList<>();
+        for (CartItem item : items) {
+            if (item.getProduct() instanceof Shippable) {
+                for (int i = 0; i < item.getQuantity(); i++) {
+                    shippableItems.add((Shippable) item.getProduct());
+                }
+            }
+        }
+        return shippableItems;
+    }
+}
+
+// Shipping Service class
+class ShippingService {
+    private static final double SHIPPING_RATE_PER_KG = 10.0;
+    
+    public static double calculateShippingFee(List<Shippable> shippableItems) {
+        if (shippableItems.isEmpty()) {
+            return 0.0;
+        }
+        
+        double totalWeight = shippableItems.stream().mapToDouble(Shippable::getWeight).sum();
+        return Math.ceil(totalWeight) * SHIPPING_RATE_PER_KG;
+    }
+    
+    public static void printShipmentNotice(List<Shippable> shippableItems) {
+        if (shippableItems.isEmpty()) {
+            return;
+        }
         
         System.out.println("** Shipment notice **");
-        double totalWeight = 0;
         
-        for (Shippable item : items) {
-            int qty = quantities.getOrDefault(item.getName(), 1);
-            double itemWeight = item.getWeight() * qty;
-            totalWeight += itemWeight;
+        // Group items by name and calculate total weight
+        Map<String, Integer> itemCounts = new HashMap<>();
+        Map<String, Double> itemWeights = new HashMap<>();
+        
+        for (Shippable item : shippableItems) {
+            String name = item.getName();
+            itemCounts.put(name, itemCounts.getOrDefault(name, 0) + 1);
+            itemWeights.put(name, item.getWeight());
+        }
+        
+        double totalWeight = 0;
+        for (Map.Entry<String, Integer> entry : itemCounts.entrySet()) {
+            String name = entry.getKey();
+            int count = entry.getValue();
+            double singleWeight = itemWeights.get(name);
+            double totalItemWeight = singleWeight * count;
+            totalWeight += totalItemWeight;
             
-            System.out.println(qty + "x " + item.getName() + " " + 
-                             String.format("%.0f", itemWeight * 1000) + "g");
+            System.out.println(count + "x " + name + " " + (int)(totalItemWeight * 1000) + "g");
         }
         
         System.out.println("Total package weight " + String.format("%.1f", totalWeight) + "kg");
     }
 }
 
-// Main e-commerce system
+// Main class with checkout functionality
 public class Main {
     
-    public static void checkout(Customer customer, Cart cart) {
-        try {
-            // Check if cart is empty
-            if (cart.isEmpty()) {
-                throw new Exception("Cart is empty");
-            }
-            
-            // Validate all items before checkout
-            List<Shippable> shippableItems = new ArrayList<>();
-            Map<String, Integer> shippableQuantities = new HashMap<>();
-            
-            for (CartItem item : cart.getItems()) {
-                Product product = item.getProduct();
-                int quantity = item.getQuantity();
-                
-                // Check if product is expired
-                if (product.isExpired()) {
-                    throw new Exception("Product expired: " + product.getName());
-                }
-                
-                // Check if product is in stock
-                if (!product.isInStock(quantity)) {
-                    throw new Exception("Product out of stock: " + product.getName() + 
-                                      " (Available: " + product.getQuantity() + ", Requested: " + quantity + ")");
-                }
-                
-                // Collect shippable items
-                if (product instanceof Shippable) {
-                    shippableItems.add((Shippable) product);
-                    shippableQuantities.put(product.getName(), quantity);
-                }
-            }
-            
-            // Calculate costs
-            double subtotal = cart.getSubtotal();
-            ShippingService shippingService = new ShippingService();
-            double shippingFee = shippingService.calculateShippingFee(shippableItems);
-            double totalAmount = subtotal + shippingFee;
-            
-            // Check customer balance
-            if (customer.getBalance() < totalAmount) {
-                throw new Exception("Insufficient balance. Required: " + totalAmount + 
-                                  ", Available: " + customer.getBalance());
-            }
-            
-            // Process shipment
-            shippingService.processShipment(shippableItems, shippableQuantities);
-            
-            // Update product quantities
-            for (CartItem item : cart.getItems()) {
-                Product product = item.getProduct();
-                product.setQuantity(product.getQuantity() - item.getQuantity());
-            }
-            
-            // Process payment
-            customer.deductBalance(totalAmount);
-            
-            // Print checkout receipt
-            System.out.println("** Checkout receipt **");
-            for (CartItem item : cart.getItems()) {
-                System.out.println(item.getQuantity() + "x " + item.getProduct().getName() + 
-                                 " " + String.format("%.0f", item.getTotalPrice()));
-            }
-            System.out.println("----------------------");
-            System.out.println("Subtotal " + String.format("%.0f", subtotal));
-            System.out.println("Shipping " + String.format("%.0f", shippingFee));
-            System.out.println("Amount " + String.format("%.0f", totalAmount));
-            System.out.println("Customer balance after payment: " + String.format("%.2f", customer.getBalance()));
-            
-            // Clear cart after successful checkout
-            cart.clear();
-            
-        } catch (Exception e) {
-            System.err.println("Checkout failed: " + e.getMessage());
+    public static void checkout(Customer customer, Cart cart) throws Exception {
+        // Check if cart is empty
+        if (cart.isEmpty()) {
+            throw new Exception("Cart is empty");
         }
+        
+        // Calculate costs
+        double subtotal = cart.getSubtotal();
+        List<Shippable> shippableItems = cart.getShippableItems();
+        double shippingFee = ShippingService.calculateShippingFee(shippableItems);
+        double totalAmount = subtotal + shippingFee;
+        
+        // Check if customer can afford
+        if (!customer.canAfford(totalAmount)) {
+            throw new Exception("Insufficient balance. Required: " + totalAmount + ", Available: " + customer.getBalance());
+        }
+        
+        // Process shipping
+        ShippingService.printShipmentNotice(shippableItems);
+        
+        // Print checkout receipt
+        System.out.println("** Checkout receipt **");
+        for (CartItem item : cart.getItems()) {
+            System.out.println(item.getQuantity() + "x " + item.getProduct().getName() + " " + (int)item.getTotalPrice());
+        }
+        System.out.println("----------------------");
+        System.out.println("Subtotal " + (int)subtotal);
+        System.out.println("Shipping " + (int)shippingFee);
+        System.out.println("Amount " + (int)totalAmount);
+        
+        // Process payment
+        customer.deductBalance(totalAmount);
+        System.out.println("Customer balance after payment: " + customer.getBalance());
     }
     
     public static void main(String[] args) {
         try {
             // Create products
-            Product cheese = new ShippableExpirableProduct("Cheese", 100, 10, 
-                LocalDate.now().plusDays(5), 0.2); // 200g per unit
-            Product biscuits = new ShippableExpirableProduct("Biscuits", 150, 5, 
-                LocalDate.now().plusDays(30), 0.7); // 700g per unit
-            Product tv = new ShippableNonExpirableProduct("TV", 500, 3, 5.0); // 5kg per unit
-            Product mobile = new NonExpirableProduct("Mobile", 300, 8);
-            Product scratchCard = new NonExpirableProduct("Scratch Card", 50, 20);
+            ShippableExpirableProduct cheese = new ShippableExpirableProduct("Cheese", 100, 5, LocalDate.now().plusDays(7), 0.2);
+            ShippableExpirableProduct biscuits = new ShippableExpirableProduct("Biscuits", 150, 3, LocalDate.now().plusDays(30), 0.7);
+            ShippableNonExpirableProduct tv = new ShippableNonExpirableProduct("TV", 500, 2, 15.0);
+            NonExpirableProduct scratchCard = new NonExpirableProduct("Mobile Scratch Card", 50, 10);
             
             // Create customer
-            Customer customer = new Customer("John Doe", 1000.0);
+            Customer customer = new Customer("John Doe", 1000);
             
             // Create cart and add items
             Cart cart = new Cart();
             
-            System.out.println("=== Test Case 1: Successful Checkout ===");
+            System.out.println("=== SUCCESSFUL CHECKOUT EXAMPLE ===");
             cart.add(cheese, 2);
             cart.add(biscuits, 1);
             cart.add(scratchCard, 1);
             
-            System.out.println("Customer balance before: " + customer.getBalance());
             checkout(customer, cart);
             
-            System.out.println("\n=== Test Case 2: Adding TV ===");
-            cart.add(tv, 1);
-            cart.add(mobile, 1);
-            checkout(customer, cart);
+            System.out.println("\n=== TESTING ERROR CASES ===");
             
-            System.out.println("\n=== Test Case 3: Empty Cart Error ===");
-            Cart emptyCart = new Cart();
-            checkout(customer, emptyCart);
-            
-            System.out.println("\n=== Test Case 4: Insufficient Stock Error ===");
+            // Test case 1: Empty cart
             try {
-                cart.add(tv, 5); // Only 2 TVs left after previous purchase
+                Cart emptyCart = new Cart();
+                checkout(customer, emptyCart);
             } catch (Exception e) {
-                System.err.println("Add to cart failed: " + e.getMessage());
+                System.out.println("Error: " + e.getMessage());
             }
             
-            System.out.println("\n=== Test Case 5: Expired Product Error ===");
-            Product expiredCheese = new ShippableExpirableProduct("Expired Cheese", 100, 5, 
-                LocalDate.now().minusDays(1), 0.2);
+            // Test case 2: Insufficient balance
             try {
-                cart.add(expiredCheese, 1);
+                Cart expensiveCart = new Cart();
+                expensiveCart.add(tv, 2); // 2 TVs = 1000, but we also have shipping
+                checkout(customer, expensiveCart);
             } catch (Exception e) {
-                System.err.println("Add to cart failed: " + e.getMessage());
+                System.out.println("Error: " + e.getMessage());
             }
             
-            System.out.println("\n=== Test Case 6: Insufficient Balance Error ===");
-            Customer poorCustomer = new Customer("Poor Customer", 50.0);
-            Cart expensiveCart = new Cart();
-            expensiveCart.add(tv, 1);
-            checkout(poorCustomer, expensiveCart);
+            // Test case 3: Out of stock
+            try {
+                Cart cart2 = new Cart();
+                cart2.add(cheese, 10); // Only 3 cheese left after previous purchase
+            } catch (Exception e) {
+                System.out.println("Error: " + e.getMessage());
+            }
+            
+            // Test case 4: Expired product
+            try {
+                ShippableExpirableProduct expiredCheese = new ShippableExpirableProduct("Expired Cheese", 100, 5, LocalDate.now().minusDays(1), 0.2);
+                Cart cart3 = new Cart();
+                cart3.add(expiredCheese, 1);
+            } catch (Exception e) {
+                System.out.println("Error: " + e.getMessage());
+            }
+            
+            // Test case 5: Non-shippable items only
+            System.out.println("\n=== NON-SHIPPABLE ITEMS ONLY ===");
+            Cart digitalCart = new Cart();
+            digitalCart.add(scratchCard, 2);
+            checkout(customer, digitalCart);
             
         } catch (Exception e) {
-            System.err.println("Error: " + e.getMessage());
+            System.out.println("Unexpected error: " + e.getMessage());
         }
     }
 }
