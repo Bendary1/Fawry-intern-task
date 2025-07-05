@@ -1,0 +1,29 @@
+=== SUCCESSFUL CHECKOUT EXAMPLE ===
+** Shipment notice **
+1x Biscuits 700g
+2x Cheese 400g
+Total package weight 1.1kg
+** Checkout receipt **
+2x Cheese 200
+1x Biscuits 150
+1x Mobile Scratch Card 50
+----------------------
+Subtotal 400
+Shipping 20
+Amount 420
+Customer balance after payment: 580.0
+
+=== TESTING ERROR CASES ===
+Error: Cart is empty
+Error: Insufficient balance. Required: 1300.0, Available: 580.0
+Error: Product Cheese is out of stock. Available: 3
+Error: Product Expired Cheese has expired
+
+=== NON-SHIPPABLE ITEMS ONLY ===
+** Checkout receipt **
+2x Mobile Scratch Card 100
+----------------------
+Subtotal 100
+Shipping 0
+Amount 100
+Customer balance after payment: 480.0
