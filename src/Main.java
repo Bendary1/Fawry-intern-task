@@ -34,7 +34,7 @@ public class Main {
         for (CartItem item : cart.getItems()) {
             System.out.println(item.getQuantity() + "x " + item.getProduct().getName() + " " + (int)item.getTotalPrice());
         }
-        System.out.println("----------------------");
+        System.out.println("-----------------------");
         System.out.println("Subtotal " + (int)subtotal);
         System.out.println("Shipping " + (int)shippingFee);
         System.out.println("Amount " + (int)totalAmount);
