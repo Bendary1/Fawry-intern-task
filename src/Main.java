@@ -44,10 +44,7 @@ public class Main {
         System.out.println("Customer balance after payment: " + customer.getBalance());
     }
     
-    /**
-     * Main method that demonstrates the e-commerce system.
-     * @param args command line arguments
-     */
+
     public static void main(String[] args) {
         try {
             // Create products
